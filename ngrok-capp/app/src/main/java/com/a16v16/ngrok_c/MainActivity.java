@@ -4,6 +4,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
+import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -31,6 +32,8 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         TextView tv=(TextView) findViewById(R.id.tv);
+        TextView out=(TextView) findViewById(R.id.out);
+        out.setMovementMethod(ScrollingMovementMethod.getInstance()) ;
 
         tv.setText("未启动");
         try{
@@ -69,13 +72,10 @@ public class MainActivity extends AppCompatActivity {
         });
 
         Button reboot=(Button) findViewById(R.id.reboot);
-        start.setOnClickListener(new View.OnClickListener() {
+        reboot.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-
-
-
-
-
+                    TextView out=(TextView) findViewById(R.id.out);;
+                    out.setText("");
                     Thread t = new Thread(new Runnable(){
                         public void run(){
                             try {
@@ -83,6 +83,7 @@ public class MainActivity extends AppCompatActivity {
                                 byte[] buf = "{\"cmd\":\"exit\"}".getBytes();
                                 DatagramPacket dp = new DatagramPacket(buf, buf.length, InetAddress.getByName("127.0.0.1"), 1885);//10000为定义的端口
                                 ds.send(dp);
+                                Log.i("jni","send...");
                                 ds.close();
                             } catch (Exception  e){
                                     e.printStackTrace();
@@ -111,7 +112,7 @@ public class MainActivity extends AppCompatActivity {
                                 tv.setText("已启动");
 
                         }
-                    }, 1000);
+                    }, 3000);
 
 
             }
