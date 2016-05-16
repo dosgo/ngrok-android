@@ -1,5 +1,8 @@
 package com.a16v16.ngrok_c;
 
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Message;
@@ -12,6 +15,8 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 import android.os.Handler;
+
+import java.io.FileInputStream;
 import java.lang.Runnable;
 
 import java.io.BufferedReader;
@@ -25,17 +30,57 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 
+import android.content.SharedPreferences.Editor;
+import android.widget.ToggleButton;
+
 public class MainActivity extends AppCompatActivity {
     String exec_path="";
+    String privatepath="";
+    TextView out;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         TextView tv=(TextView) findViewById(R.id.tv);
-        TextView out=(TextView) findViewById(R.id.out);
+        out=(TextView) findViewById(R.id.out);
+        EditText cmd=(EditText) findViewById(R.id.cmd);
+        final ToggleButton autostart=(ToggleButton) findViewById(R.id.autostart);
         out.setMovementMethod(ScrollingMovementMethod.getInstance()) ;
-
         tv.setText("未启动");
+        privatepath=getFilesDir()+"";
+        Intent intent=getIntent();
+        if(intent.getBooleanExtra("autostart",false)){
+            final  String exec_path=privatepath+"/ngrokc";
+            SharedPreferences sharedPreferences = getSharedPreferences(getPackageName(), Context.MODE_PRIVATE); //私有数据
+            final  String cmdstr=sharedPreferences.getString("cmd","");
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        MyLog.writeLogtoFile1("ngrokc.log","ngrokc","autostart...");
+                        MyLog.writeLogtoFile1("ngrokc.log","exec_path",exec_path);
+                        MyLog.writeLogtoFile1("ngrokc.log","cmdstr",cmdstr);
+                        execCmd(exec_path + " " + cmdstr);
+
+                    } catch (Exception e) {
+                        Log.i("jni", "Exception：" + e.getMessage());
+                        MyLog.writeLogtoFile1("ngrokc.log","ngrokc","autostart.Exception");
+                    }
+                }
+            }).start();
+            moveTaskToBack(true);
+        }
+
+
+
+        SharedPreferences sharedPreferences = getSharedPreferences(MainActivity.this.getPackageName(), Context.MODE_PRIVATE); //私有数据
+        String cmdstr=sharedPreferences.getString("cmd","");
+        if(cmdstr.length()>0){
+            cmd.setText(cmdstr);
+        }
+        autostart.setChecked(sharedPreferences.getBoolean("autostart",false));
+
+
+
         try{
             exec_path=MainActivity.this.getFilesDir()+"/ngrokc";
             if(!fileIsExists(exec_path)) {
@@ -118,6 +163,34 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        final Button set=(Button) findViewById(R.id.set);
+        set.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                final EditText cmd=(EditText) findViewById(R.id.cmd);
+                SharedPreferences sharedPreferences = getSharedPreferences(MainActivity.this.getPackageName(), Context.MODE_PRIVATE); //私有数据
+                Editor editor = sharedPreferences.edit();//获取编辑器
+                editor.putString("cmd", cmd.getText()+"");
+                editor.commit();//提交修改
+            }
+        });
+        autostart.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                SharedPreferences sharedPreferences = getSharedPreferences(MainActivity.this.getPackageName(), Context.MODE_PRIVATE); //私有数据
+                Editor editor = sharedPreferences.edit();//获取编辑器
+                editor.putBoolean("autostart",autostart.isChecked());
+                editor.commit();//提交修改
+        }});
+
+        final Button clear=(Button) findViewById(R.id.set);
+        clear.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                MyLog.ConsoleLogFileClear(privatepath,"ngrok.out");
+                Message message=new Message();
+                message.what=1;//标志是哪个线程传数据
+                myHandler.sendMessage(message);//发送message信息
+            }
+        });
+
 
 
     }
@@ -135,7 +208,16 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    private void ReloadConsole(){
+        String ConsoleStr=ReadTxtFile(privatepath+"/ngrok.out");
+        if(ConsoleStr.length()>0){
+            out.setText(ConsoleStr);
+        }
+    }
+
     private void execCmd(String cmd) throws IOException {
+        //清空日志
+        MyLog.ConsoleLogFileClear(privatepath,"ngrok.out");
         Log.i("jni","start ngrok-c");
         Runtime runtime = Runtime.getRuntime();
         Process process = runtime.exec(cmd);
@@ -146,10 +228,9 @@ public class MainActivity extends AppCompatActivity {
         Log.i("jni","start1 ngrok-c");
         while (null != (line = br.readLine())) {
             Log.e("########", line);
+            MyLog.writeLogtoFile1("ngrokc.log","",line);
+            MyLog.ConsoleLogtoFile(privatepath,"ngrok.out",line);
             Message message=new Message();
-            Bundle bundle=new Bundle();
-            bundle.putString("line", line);
-            message.setData(bundle);//bundle传值，耗时，效率低
             message.what=1;//标志是哪个线程传数据
             myHandler.sendMessage(message);//发送message信息
         }
@@ -167,10 +248,7 @@ public class MainActivity extends AppCompatActivity {
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case 1:
-                    Bundle b = msg.getData();
-                    String line = b.getString("line");
-                    TextView out=(TextView) findViewById(R.id.out);;
-                    out.setText(out.getText()+line+"\r\n");
+                    ReloadConsole();
                     break;
             }
             super.handleMessage(msg);
@@ -198,6 +276,51 @@ public class MainActivity extends AppCompatActivity {
              e.printStackTrace();
 
         }
+    }
+
+    public static String ReadTxtFile(String strFilePath)
+    {
+        String path = strFilePath;
+        String content = ""; //文件内容字符串
+        //打开文件
+        File file = new File(path);
+        //如果path是传递过来的参数，可以做一个非目录的判断
+        if (file.isDirectory())
+        {
+            Log.d("TestFile", "The File doesn't not exist.");
+        }
+        else
+        {
+            try {
+                InputStream instream = new FileInputStream(file);
+                if (instream != null)
+                {
+                    InputStreamReader inputreader = new InputStreamReader(instream);
+                    BufferedReader buffreader = new BufferedReader(inputreader);
+                    String line;
+                    //分行读取
+                    while (( line = buffreader.readLine()) != null) {
+                        content += line + "\n";
+                    }
+                    instream.close();
+                }
+            }
+            catch (java.io.FileNotFoundException e)
+            {
+                Log.d("TestFile", "The File doesn't not exist.");
+            }
+            catch (IOException e)
+            {
+                Log.d("TestFile", e.getMessage());
+            }
+        }
+        return content;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ReloadConsole();
     }
 }
 
